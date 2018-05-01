@@ -1,1 +1,1 @@
-# Laboraroy notebooks
+# Laboratory notebooks
