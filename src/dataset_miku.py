@@ -17,6 +17,6 @@ for i in range(1, 1000):
         contents = line.find_all("td")[-1].contents
         seq += contents
 print("\nGot {} lines.".format(len(seq)))
-seq = [line.replace("○○", "P") for line in seq]
+seq = [line.replace("○○", "P").replace(" ", "") for line in seq]
 with open("./dataset/charactor/miku.txt", "w") as f:
     f.write("\n".join(seq))
