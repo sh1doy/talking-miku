@@ -1,7 +1,11 @@
 TMP_DIR = dataset/tmp
 NUCC_URL = http://mmsrv.ninjal.ac.jp/nucc/nucc.zip
 NUCC_ZIP = nucc.zip
-MODEL_DIR = model
+MODEL_DIR = models
+
+VOCAB_SIZE = 10000
+
+all: dataset-all tokenize
 
 dataset-nucc:
 	-mkdir $(TMP_DIR)
@@ -18,5 +22,5 @@ tokenize:
 	-mkdir $(TMP_DIR)
 	-mkdir $(MODEL_DIR)
 	cat dataset/conversation/*.txt dataset/charactor/*.txt > $(TMP_DIR)/all.txt
-	spm_train --input $(TMP_DIR)/all.txt --model_prefix $(MODEL_DIR)/m --input_format text --vocab_size 5000 --split_by_whitespace false --split_by_unicode_script false --model_type bpe --hard_vocab_limit false
+	spm_train --input $(TMP_DIR)/all.txt --model_prefix $(MODEL_DIR)/m --input_format text --vocab_size $(VOCAB_SIZE) --split_by_whitespace false --split_by_unicode_script false --hard_vocab_limit false
 	python src/tokenize_encode.py

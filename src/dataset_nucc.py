@@ -31,6 +31,7 @@ def clean(file):
         data = re.sub(r"\u3000", "", data)
         data = re.sub(r"[F|M][0-9]{3}", "P", data)
         data = re.sub(r"＊", "", data)
+        data = re.sub(r"\t", "", data)
         return "\n".join([line for line in data.split("\n") if line not in ["", "。"]])
 
 
