@@ -39,4 +39,13 @@ data = [clean(file) for file in tqdm(files, "cleaning data")]
 
 for e, d in enumerate(data):
     with open("./dataset/conversation/nucc_{:03d}.txt".format(e), "w") as f:
-        f.writelines(d)
+        d = d.split("\n")
+        d = [""] + d
+        d_in = d[:-1]
+        d_out = d[1:]
+        new_d = []
+        for i, o, in zip(d_in, d_out):
+            new_d.append("I:" + i)
+            new_d.append("O:" + o)
+        new_d = "\n".join(new_d)
+        f.write(new_d)

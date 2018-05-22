@@ -13,7 +13,8 @@ def get_conv(file):
 
 
 def main():
-    files = glob("./dataset/DBDC2_dev/**/*.json", recursive=True)
+    files = glob("./dataset/tmp/DBDC2_dev/**/*.json", recursive=True)
+    print("converting {} file(s)...".format(len(files)))
     convs = [get_conv(file) for file in files]
     for e, d in enumerate(convs):
         with open("./dataset/conversation/dbdc2_{:03d}.txt".format(e), "w") as f:
