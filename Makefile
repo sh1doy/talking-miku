@@ -14,7 +14,10 @@ dataset-nucc:
 	python src/dataset_nucc.py
 
 dataset-miku:
-	python src/dataset_miku.py 
+	python src/dataset_miku.py
+
+dataset-dbdc2:
+	python src/dataset_dbdc2.py
 
 dataset-all: dataset-nucc dataset-miku
 
