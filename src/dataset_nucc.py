@@ -45,7 +45,7 @@ for e, d in enumerate(data):
         d_out = d[1:]
         new_d = []
         for i, o, in zip(d_in, d_out):
-            new_d.append("I:" + i)
-            new_d.append("O:" + o)
+            new_d.append(i)
+            new_d.append(o)
         new_d = "\n".join(new_d)
         f.write(new_d)
