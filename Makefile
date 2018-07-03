@@ -25,10 +25,3 @@ dataset-dbdc2:
 	python src/dataset_dbdc2.py
 
 dataset-all: dataset-dbdc2 dataset-miku
-
-tokenize:
-	-mkdir $(TMP_DIR)
-	-mkdir $(MODEL_DIR)
-	cat dataset/conversation/*.txt dataset/charactor/*.txt > $(TMP_DIR)/all.txt
-	spm_train --input $(TMP_DIR)/all.txt --model_prefix $(MODEL_DIR)/m --input_format text --vocab_size $(VOCAB_SIZE) --split_by_whitespace false --split_by_unicode_script false --hard_vocab_limit false
-	python src/tokenize_encode.py
