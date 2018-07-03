@@ -1,67 +1,105 @@
+# model defining
+import chainer
 import numpy as np
-import tensorflow as tf
-from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import *
-from tensorflow.python.keras.optimizers import *
-keras = tf.keras
+from chainer import links as L
+from chainer import functions as F
+from chainer import Chain
+from chainer import cuda
+from chainer import initializers
+from utils import sequence_embed
+
+cuda.get_device(0).use()
 
 
-class Seq2seq:
-    def __init__(self):
-        encoder_inputs = Input([None], dtype="int32", name="x")
-        E_embed = Embedding(VOCAB, EMBEDDING_SIZE, mask_zero=True, name="E_embed")(encoder_inputs)
-        encoder1 = LSTM(NUM_UNITS, return_state=True, return_sequences=True, dropout=.2, recurrent_dropout=.2)
-        encoder2 = LSTM(NUM_UNITS, return_state=True, dropout=.2, recurrent_dropout=.2)
-        out, *mid_states1 = encoder1(E_embed)
-        out, *mid_states2 = encoder2(out)
-        # End2end learning
-        decoder_inputs = Input(shape=[None], dtype="int32", name="y_")
-        F_embed = Embedding(VOCAB, EMBEDDING_SIZE, mask_zero=True, name="F_embed")(decoder_inputs)
-        decoder1 = LSTM(NUM_UNITS, return_sequences=True, return_state=True, dropout=.2, recurrent_dropout=.2)
-        decoder2 = LSTM(NUM_UNITS, return_sequences=True, return_state=True, dropout=.2, recurrent_dropout=.2)
-        decoder_outputs, *decoder_states1 = decoder1(F_embed, initial_state=mid_states1)
-        decoder_outputs, *decoder_states2 = decoder2(decoder_outputs, initial_state=mid_states2)
-        decoder_dense = Dense(VOCAB, activation='softmax', name="output_dense")
-        decoder_outputs = decoder_dense(decoder_outputs)
+class BiLSTM_Encoder(Chain):
 
-        self.training_model = Model(inputs=[encoder_inputs, decoder_inputs], outputs=decoder_outputs)
-        # Single Encoder
-        self.encoder_model = Model(inputs=encoder_inputs, outputs=mid_states1 + mid_states2)
-        # Single Decoder
-        decoder_states = [Input([NUM_UNITS]) for _ in range(4)]
-        d_out, *new_decoder_states1 = decoder1(F_embed, initial_state=decoder_states[0:2])
-        d_out, *new_decoder_states2 = decoder2(d_out, initial_state=decoder_states[2:4])
-        new_decoder_outputs = decoder_dense(d_out)
+    def __init__(self, n_layers, dim_E, dim_rep, dropout=0.2):
+        super(BiLSTM_Encoder, self).__init__()
+        with self.init_scope():
+            self.LSTM = L.NStepBiLSTM(n_layers, dim_E, dim_rep, 0.2)
+            self.hh = [L.Linear(dim_rep * 2, dim_rep) for _ in range(n_layers)]
+            self.cc = [L.Linear(dim_rep * 2, dim_rep) for _ in range(n_layers)]
+            for e, link in enumerate(self.hh):
+                self.add_link(str(e) + "h", link)
+            for e, link in enumerate(self.cc):
+                self.add_link(str(e) + "c", link)
+            self.n_layers = n_layers
 
-        self.decoder_model = Model(inputs=[decoder_inputs] + decoder_states,
-                                   outputs=[new_decoder_outputs] + new_decoder_states1 + new_decoder_states2)
+    def __call__(self, hx, cx, xs):
+        hy, cy, ys = self.LSTM(hx, cx, xs)
+        hy = F.stack([self.hh[i](
+            F.concat([hy[i * 2], hy[i * 2 + 1]], -1)) for i in range(self.n_layers)], 0)
+        cy = F.stack([self.cc[i](
+            F.concat([cy[i * 2], cy[i * 2 + 1]], -1)) for i in range(self.n_layers)], 0)
+        return hy, cy, ys
 
-        self.training_model.compile(Adam(1e-3), loss='sparse_categorical_crossentropy')
-#         self.encoder_model.compile(Adam(1e-4), loss='sparse_categorical_crossentropy')
-#         self.decoder_model.compile(Adam(1e-4), loss='sparse_categorical_crossentropy')
 
-    # generate target given source sequence
-    def predict_sequence(self, source, n_steps, mode="greedy", alpha=1.0):
-        # encode
-        state = self.encoder_model.predict(source)
-        # start of sequence input
-        x = np.array([[1] for _ in range(len(source))])
-        # collect predictions
-        output = list()
-        for t in range(n_steps):
-            # predict next char
-            x, *state = self.decoder_model.predict([x] + state)
-            if mode == "greedy":
-                x = x.argmax(-1)
-            elif mode == "random":
-                next_x = []
-                for i in range(len(x)):
-                    x[np.isnan(x)] = 0.0
-                    p = np.power(x[i][0], alpha)
-                    p /= p.sum()
-                    next_x.append(np.random.choice(np.arange(len(x[i][0])), p=p))
-                x = np.array(next_x)[:, np.newaxis]
-            # store prediction
-            output.append(x)
-            # update target sequence
-        return np.concatenate(output, -1)
+class Model(Chain):
+
+    def __init__(self, vocab, SEQ_LEN, dim_E, dim_rep, n_layers):
+        n_layers = n_layers
+        super(Model, self).__init__(
+            E=L.EmbedID(vocab + 1, dim_E, initializers.HeNormal(), -1),
+            F=L.EmbedID(vocab + 1, dim_E, initializers.HeNormal(), -1),
+            encoder=BiLSTM_Encoder(n_layers, dim_E, dim_rep, 0.5),
+            decoder=L.NStepLSTM(n_layers, dim_E, dim_rep, 0.5),
+            W=L.Linear(dim_rep, vocab)
+        )
+
+    def encode(self, seq):
+        """
+        labels, relations, coefs: array
+        texts: list of list
+        """
+
+        # Encode
+        seq = [s[::-1] for s in seq]
+        seq_embedded = sequence_embed(self.E, seq)
+        hx, cx, _ = self.encoder(None, None, seq_embedded)
+        return(hx, cx)
+
+    def get_loss(self, seq, texts):
+
+        hx, cx = self.encode(seq)
+
+        # Decode
+        eos = self.xp.array([0], 'i')
+        ys_in = [F.concat([eos, text], axis=0) for text in texts]
+        ys_out = [F.concat([text, eos], axis=0) for text in texts]
+
+        texts_embed = sequence_embed(self.F, ys_in)
+        batch = len(texts)
+
+        _, _, os = self.decoder(hx, cx, texts_embed)  # cx: (n_layers, batch, dim) <- WTF
+
+        # Loss
+        concat_os = F.concat(os, axis=0)
+        concat_ys_out = F.concat(ys_out, axis=0)
+        loss = F.sum(F.softmax_cross_entropy(self.W(concat_os), concat_ys_out, reduce='no')) / batch
+
+        return(loss)
+
+    def translate(self, seq, max_length=150):
+        with chainer.no_backprop_mode(), chainer.using_config('train', False):
+            batch = len(seq)
+            hx, cx = self.encode(seq)
+            ys = self.xp.full(batch, 0, 'i')
+            h, c = hx, cx
+            result = []
+            for i in range(max_length):
+                eys = self.F(ys)
+                eys = F.split_axis(eys, batch, 0)
+                h, c, ys = self.decoder(h, c, eys)
+                cys = F.concat(ys, axis=0)
+                wy = self.W(cys)
+                ys = self.xp.argmax(wy.data, axis=1).astype('i')
+                result.append(ys)
+            result = cuda.to_cpu(self.xp.concatenate([self.xp.expand_dims(x, 0) for x in result]).T)
+            # Remove EOS taggs
+            outs = []
+            for y in result:
+                inds = np.argwhere(y == 0)
+                if len(inds) > 0:
+                    y = y[:inds[0, 0]]
+                outs.append(y)
+            return(outs)

@@ -1,6 +1,7 @@
 import MeCab
 import numpy as np
-from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+from chainer import functions as F
+from chainer.dataset import to_device
 
 
 def read_file(file):
@@ -24,14 +25,20 @@ class Tokenizer:
         self.word2id = word2id
         self.id2word = id2word
 
+    def get_id(self, word):
+        try:
+            return self.word2id[word]
+        except KeyError as e:
+            return 3
+
     def encode(self, seq):
         seq = [token for token in seq]
-        return [1] + [self.word2id[word] for word in seq] + [2]
+        return [1] + [self.get_id(word) for word in seq] + [2]
 
     def decode(self, seq):
         indice = np.where(np.array(seq) == 2)[0][0]
         seq = seq[:indice]
-        res = "".join([self.id2word[word] for word in seq if word not in [0, 1, 2]]).replace("▁", "")
+        res = "".join([self.id2word[word] for word in seq if word not in [0, 1, 2, 3]]).replace("▁", "")
         return res
 
     def decode_batch(self, seqs):
@@ -39,8 +46,13 @@ class Tokenizer:
         return res
 
 
-def get_batch(x, y, seq_len):
-    x = pad_sequences(x, seq_len, padding="post", truncating="post")
-    y_in = pad_sequences([line[:-1] for line in y], seq_len, padding="post", truncating="post")
-    y_out = pad_sequences([line[1:] for line in y], seq_len, padding="post", truncating="post")
-    return [x, y_in], y_out
+def to_device0(x):
+    return(to_device(0, x))
+
+
+def sequence_embed(embed, xs):
+    x_len = [len(x) for x in xs]
+    x_section = np.cumsum(x_len[:-1])
+    ex = embed(F.concat(xs, axis=0))
+    exs = F.split_axis(ex, x_section, 0)
+    return exs
