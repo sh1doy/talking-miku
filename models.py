@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import *
 from tensorflow.python.keras.optimizers import *
@@ -7,7 +8,7 @@ keras = tf.keras
 
 
 class Seq2seq:
-    def __init__(self):
+    def __init__(self, EMBEDDING_SIZE, NUM_UNITS, SEQ_LEN, BEAM_WIDTH, BATCH_SIZE, VOCAB):
         encoder_inputs = Input([None], dtype="int32", name="x")
         E_embed = Embedding(VOCAB, EMBEDDING_SIZE, mask_zero=True, name="E_embed")(encoder_inputs)
         encoder1 = LSTM(NUM_UNITS, return_state=True, return_sequences=True, dropout=.2, recurrent_dropout=.2)
@@ -65,3 +66,22 @@ class Seq2seq:
             output.append(x)
             # update target sequence
         return np.concatenate(output, -1)
+
+
+class Classifier:
+    def __init__(self, EMBEDDING_SIZE, NUM_UNITS, VOCAB):
+        inputs = Input([None], dtype="int32", name="x")
+        y = Masking(0)(inputs)
+        y = Lambda(lambda x: K.one_hot(x, VOCAB))(y)
+        self.onehot = Model(inputs=[inputs], outputs=y)
+
+        inputs = Input([None, VOCAB])
+        E_embed = Dense(EMBEDDING_SIZE, use_bias=False)(inputs)
+        y = LSTM(NUM_UNITS, dropout=.2, recurrent_dropout=.2)(E_embed)
+        y = Dense(1, activation='sigmoid', name="y")(y)
+        self.clf_model = Model(inputs=[inputs], outputs=y)
+
+        inputs = Input([None], dtype="int32", name="x")
+        y = self.onehot(inputs)
+        y = self.clf_model(y)
+        self.model = Model(inputs=[inputs], outputs=y)
