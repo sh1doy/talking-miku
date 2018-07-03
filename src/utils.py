@@ -33,12 +33,10 @@ class Tokenizer:
 
     def encode(self, seq):
         seq = [token for token in seq]
-        return [1] + [self.get_id(word) for word in seq] + [2]
+        return np.array([1] + [self.get_id(word) for word in seq] + [2], "int32")
 
     def decode(self, seq):
-        indice = np.where(np.array(seq) == 2)[0][0]
-        seq = seq[:indice]
-        res = "".join([self.id2word[word] for word in seq if word not in [0, 1, 2, 3]]).replace("▁", "")
+        res = "".join([self.id2word[word] for word in seq if word not in [0, 1, 2]]).replace("▁", "")
         return res
 
     def decode_batch(self, seqs):
