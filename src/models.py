@@ -34,11 +34,10 @@ class BiLSTM_Encoder(Chain):
         return hy, cy, ys
 
 
-class Model(Chain):
+class Seq2seq(Chain):
 
     def __init__(self, vocab, SEQ_LEN, dim_E, dim_rep, n_layers):
-        n_layers = n_layers
-        super(Model, self).__init__(
+        super(Seq2seq, self).__init__(
             E=L.EmbedID(vocab + 1, dim_E, initializers.HeNormal(), -1),
             F=L.EmbedID(vocab + 1, dim_E, initializers.HeNormal(), -1),
             encoder=BiLSTM_Encoder(n_layers, dim_E, dim_rep, 0.5),
@@ -75,7 +74,8 @@ class Model(Chain):
         # Loss
         concat_os = F.concat(os, axis=0)
         concat_ys_out = F.concat(ys_out, axis=0)
-        loss = F.sum(F.softmax_cross_entropy(self.W(concat_os), concat_ys_out, reduce='no')) / batch
+        loss = F.sum(
+            F.softmax_cross_entropy(self.W(concat_os), concat_ys_out, reduce='no')) / batch
 
         return(loss)
 
@@ -94,7 +94,8 @@ class Model(Chain):
                 wy = self.W(cys)
                 ys = self.xp.argmax(wy.data, axis=1).astype('i')
                 result.append(ys)
-            result = cuda.to_cpu(self.xp.concatenate([self.xp.expand_dims(x, 0) for x in result]).T)
+            result = cuda.to_cpu(
+                self.xp.concatenate([self.xp.expand_dims(x, 0) for x in result]).T)
             # Remove EOS taggs
             outs = []
             for y in result:
@@ -103,3 +104,39 @@ class Model(Chain):
                     y = y[:inds[0, 0]]
                 outs.append(y)
             return(outs)
+
+
+class Classifier(Chain):
+
+    def __init__(self, vocab, SEQ_LEN, dim_E, dim_rep, n_layers):
+        super(Classifier, self).__init__(
+            E=L.Linear(vocab + 1, dim_E, initialW=initializers.HeNormal(), nobias=True),
+            encoder=L.NStepLSTM(n_layers, dim_E, dim_rep, 0.2),
+            W=L.Linear(dim_rep, 1)
+        )
+        self.diag = self.xp.eye(vocab + 1, dtype="float32")
+
+    def classify(self, seq_onehot):
+        seq_embedded = sequence_embed(self.E, seq_onehot)
+        sy, _, _ = self.encoder(None, None, seq_embedded)
+        y = self.W(sy[0])
+        y = F.flatten(y)
+        return(y)
+
+    def onehot(self, seq):
+        seq_onehot = [self.diag[s.tolist()] for s in seq]
+        return seq_onehot
+
+    def get_loss(self, seq, y):
+        self.diag = self.xp.array(self.diag, dtype="float32")
+        seq_onehot = self.onehot(seq)
+        logit = self.classify(seq_onehot)
+        loss = F.sigmoid_cross_entropy(logit, y)
+        return loss
+
+    def predict(self, seq):
+        self.diag = self.xp.array(self.diag, dtype="float32")
+        seq_onehot = self.onehot(seq)
+        logit = self.classify(seq_onehot)
+        logit = F.sigmoid(logit)
+        return logit

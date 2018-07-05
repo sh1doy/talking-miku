@@ -36,7 +36,8 @@ class Tokenizer:
         return np.array([1] + [self.get_id(word) for word in seq] + [2], "int32")
 
     def decode(self, seq):
-        res = "".join([self.id2word[word] for word in seq if word not in [0, 1, 2]]).replace("▁", "")
+        res = "".join(
+            [self.id2word[word] for word in seq if word not in [0, 1, 2]]).replace("▁", "")
         return res
 
     def decode_batch(self, seqs):
